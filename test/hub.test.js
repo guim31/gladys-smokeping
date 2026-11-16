@@ -508,3 +508,17 @@ test('an empty menu (a glitch) forgets no saved state', async (t) => {
   await world.fake.scanRequest();
   assert.deepEqual(Object.keys(world.hub.saved.targets), saved);
 });
+
+test('a scene event Gladys still refuses after an hour is dropped', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  t.mock.method(world.gladys, 'publishSceneEvent', async () => {
+    throw new Error('trigger removed');
+  });
+  world.smokeping.set('DNS.Google', { lost: 10 });
+  await world.step();
+  assert.equal(world.hub.saved.pending.length, 1);
+  world.clock.advance(61 * MINUTE);
+  await world.hub.pollNow();
+  assert.deepEqual(world.hub.saved.pending, []);
+});

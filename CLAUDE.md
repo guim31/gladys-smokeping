@@ -263,6 +263,10 @@ Vérifié le 16/11/2026 contre `lscr.io/linuxserver/smokeping` (SmokePing 2.9.0,
   seuil sur toutes les lignes, fin dès que la dernière repasse dessous. Injoignable clôt les deux autres sans
   événement. Une cible dont la dernière mesure date de plus de 3 pas (+ l'intervalle de lecture) est « périmée » :
   rien publié, badge `unreachable`, état gardé.
+- **Rien de sauté entre deux lectures** : chaque lecture prend `rounds + ceil(intervalle / 60 s) + 1` lignes (20 au
+  plus) et `walk()` parcourt celles postérieures à la précédente lecture, fenêtre par fenêtre (pas de 60 s et lecture
+  toutes les 5 min : une coupure de 3 min entre deux lectures déclenche « injoignable » puis « de nouveau joignable »).
+  Un événement de scène refusé par Gladys est gardé dans `/data` (`pending`) et renvoyé, abandonné après 1 h.
 - Redirections non suivies : `http://hôte/` de l'image linuxserver redirige vers `/smokeping/` ; la config ajoute
   donc `/smokeping/smokeping.cgi` à une adresse sans chemin.
 

@@ -74,6 +74,7 @@ const READ_CONCURRENCY = 4;
 // Measurements read per target, at most (a 5-minute interval on a 1-minute step).
 const MAX_ROWS = 20;
 const MAX_PENDING_EVENTS = 100;
+const PENDING_EVENT_MS = 3600_000;
 // The whole string, prefix included (SDK MAX_CAMERA_IMAGE_SIZE).
 export const MAX_CAMERA_IMAGE = 150 * 1024;
 export const CAMERA_PREFIX = 'image/png;base64,';
@@ -446,6 +447,8 @@ export class SmokePingHub {
         latencyHigh:
           previous?.latencyHigh ?? this.saved.targets[reading.path]?.latencyHigh ?? false,
       };
+      // Where the last reading stopped, kept across a stale reading.
+      target.walkedTo = previous?.walkedTo ?? null;
       if (!stale) {
         dirty = this.walk(target, previous, events) || dirty;
       }
@@ -597,23 +600,30 @@ export class SmokePingHub {
    * @returns {Promise<boolean>} whether the list kept in /data changed
    */
   async fireAll(events) {
-    const queue = [...(this.saved.pending ?? []), ...events];
+    // An event Gladys still refuses after an hour is dropped: late, it would
+    // mislead (an outage long over), and a removed trigger would be retried forever.
+    const now = this.now();
+    const kept = (this.saved.pending ?? []).filter(
+      ([, , at]) => Number.isFinite(at) && now - at < PENDING_EVENT_MS,
+    );
+    const queue = [...kept, ...events.map(([key, data]) => [key, data, now])];
+    const before = JSON.stringify(this.saved.pending ?? []);
     if (queue.length === 0) {
-      return false;
+      this.saved.pending = [];
+      return before !== '[]';
     }
     const refused = [];
-    for (const [key, data] of queue) {
+    for (const [key, data, at] of queue) {
       try {
         await this.gladys.publishSceneEvent(key, data);
       } catch (err) {
-        refused.push([key, data]);
+        refused.push([key, data, at]);
         this.problems.fail('event', `Scene event ${key} refused, kept for later: ${err.message}`);
       }
     }
     if (refused.length === 0) {
       this.problems.recover('event', 'Scene events accepted again');
     }
-    const before = JSON.stringify(this.saved.pending ?? []);
     // At most a hundred kept: an hour of outage of Gladys is not a backlog.
     this.saved.pending = refused.slice(-MAX_PENDING_EVENTS);
     return JSON.stringify(this.saved.pending) !== before;
