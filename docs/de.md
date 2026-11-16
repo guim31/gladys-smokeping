@@ -64,7 +64,8 @@ SmokePing-Seite; schränke sie bei Bedarf wie diese ein
   (`http://192.168.1.2/cgi-bin/smokeping.cgi` beim Debian-Paket).
 - **Adresse der RRD-Dateien**: leer lassen, wenn du Schritt 1 gefolgt bist.
 - **Benutzer** und **Passwort**: nur wenn der Webserver eine Anmeldung
-  verlangt.
+  verlangt. Sie werden nie an eine Adresse der RRD-Dateien auf einem anderen
+  Server gesendet.
 - **Schwelle für Paketverlust** (standardmäßig 10 %) und **Latenzschwelle**
   (100 ms): darüber gilt ein Ziel als gestört.
 - **Messungen in Folge**: wie viele SmokePing-Messungen in Folge über einer

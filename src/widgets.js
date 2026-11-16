@@ -109,8 +109,10 @@ function targetRow(hub, target, language) {
     if (latest.medianMs !== null) {
       parts.push(`${formatNumber(latest.medianMs, language)} ms`);
     }
-    parts.push(`${formatNumber(latest.lossPercent, language)} % ${pick(TEXT.loss, language)}`);
-    value = parts.join(' · ');
+    if (latest.lossPercent !== null) {
+      parts.push(`${formatNumber(latest.lossPercent, language)} % ${pick(TEXT.loss, language)}`);
+    }
+    value = parts.join(' · ') || pick(STATE_TEXT[target.state], language);
   } else {
     value = pick(STATE_TEXT[health], language);
   }

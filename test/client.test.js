@@ -137,6 +137,19 @@ test('the errors, by kind, without the credentials', async () => {
   await smokeping.menu();
   assert.match(fake.calls[0].headers.authorization, /^Basic /);
 
+  // Never sent to another server holding the RRD files.
+  const elsewhere = new SmokePingClient({
+    url: CGI,
+    dataUrl: 'http://192.0.2.99/rrd/',
+    username: 'admin',
+    password: 's3cret',
+    request: async (url, { headers }) => {
+      assert.equal(headers.authorization, undefined, url);
+      return { status: 404, contentRange: null, body: Buffer.from('') };
+    },
+  });
+  assert.equal(await elsewhere.read('DNS.Google', 1), null);
+
   fake.down = true;
   await assert.rejects(smokeping.menu(), { kind: ERROR_KINDS.UNREACHABLE });
   fake.down = false;

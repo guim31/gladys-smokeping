@@ -63,7 +63,7 @@ En Gladys, abra la integración y rellene:
   (`http://192.168.1.2/cgi-bin/smokeping.cgi` con el paquete Debian).
 - **Dirección de los archivos RRD**: déjela vacía si siguió el paso 1.
 - **Usuario** y **Contraseña**: solo si el servidor web pide un inicio de
-  sesión.
+  sesión. Nunca se envían a una dirección de archivos RRD en otro servidor.
 - **Umbral de pérdida de paquetes** (10 % por defecto) y **Umbral de
   latencia** (100 ms): por encima, un objetivo está degradado.
 - **Mediciones seguidas**: cuántas mediciones seguidas de SmokePing por

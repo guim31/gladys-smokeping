@@ -87,10 +87,18 @@ export async function httpRequest(url, { headers = {}, timeoutMs = 15_000 } = {}
     await response.body?.cancel();
     throw new Error('Response too large');
   }
-  const body = Buffer.from(await response.arrayBuffer());
-  if (body.length > MAX_BODY_BYTES) {
-    throw new Error('Response too large');
+  // Read by chunks: a chunked answer has no length to check first.
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body ?? []) {
+    size += chunk.length;
+    if (size > MAX_BODY_BYTES) {
+      await response.body.cancel().catch(() => {});
+      throw new Error('Response too large');
+    }
+    chunks.push(chunk);
   }
+  const body = Buffer.concat(chunks);
   return {
     status: response.status,
     contentRange: response.headers.get('content-range'),
@@ -200,10 +208,13 @@ export class SmokePingClient {
   }
 
   async call(url, headers = {}) {
+    // The credentials are those of the web interface: never sent to another
+    // server holding the RRD files.
+    const authorized = this.authorization && new URL(url).origin === new URL(this.url).origin;
     try {
       return await this.request(url, {
         headers: {
-          ...(this.authorization ? { authorization: this.authorization } : {}),
+          ...(authorized ? { authorization: this.authorization } : {}),
           ...headers,
         },
       });

@@ -63,7 +63,8 @@ Dans Gladys, ouvrez l'intégration et remplissez :
   (`http://192.168.1.2/cgi-bin/smokeping.cgi` avec le paquet Debian).
 - **Adresse des fichiers RRD** : laissez-la vide si vous avez suivi l'étape 1.
 - **Utilisateur** et **Mot de passe** : seulement si le serveur web demande
-  un identifiant.
+  un identifiant. Ils ne partent jamais vers une adresse des fichiers RRD
+  située sur un autre serveur.
 - **Seuil de pertes de paquets** (10 % par défaut) et **Seuil de latence**
   (100 ms) : au-delà, une cible est dégradée.
 - **Mesures consécutives** : combien de mesures SmokePing de suite au-delà

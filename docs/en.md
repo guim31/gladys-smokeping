@@ -60,7 +60,8 @@ In Gladys, open the integration and fill in:
   `http://192.168.1.2/smokeping/`, or of its `smokeping.cgi`
   (`http://192.168.1.2/cgi-bin/smokeping.cgi` with the Debian package).
 - **RRD files address**: leave it empty if you followed step 1.
-- **User** and **Password**: only if the web server asks for a login.
+- **User** and **Password**: only if the web server asks for a login. They
+  are never sent to an RRD files address on another server.
 - **Packet loss threshold** (10 % by default) and **Latency threshold**
   (100 ms): beyond them, a target is degraded.
 - **Measurements in a row**: how many SmokePing measurements in a row beyond

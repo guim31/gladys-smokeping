@@ -9,8 +9,10 @@
 // to 5 minutes, and the scene events must fire for every target, added to
 // Gladys or not — "a target becomes unreachable" spares one scene per device.
 //
-// Each reading takes the `rounds` newest measurements of every target from
-// its RRD file, so a state survives a restart of the integration:
+// Each reading takes the newest measurements of every target from its RRD
+// file and goes through the ones made since the last reading, one window of
+// `rounds` measurements at a time (src/hub.js walk), so no measurement is
+// skipped and a state survives a restart of the integration:
 //   - unreachable: every ping lost in the `rounds` newest measurements;
 //     reachable again as soon as one ping answers;
 //   - loss alert: the loss at or above the threshold in the `rounds` newest
@@ -20,7 +22,8 @@
 //     (`stale`) keeps its state and publishes nothing.
 // The last state of each target is kept in /data (src/store.js): a target
 // that went down while the integration or Gladys restarted is still
-// announced, once, and the first sight of a target fires nothing.
+// announced, once, and the first sight of a target fires nothing. A scene
+// event Gladys refuses (it is restarting) is kept there and sent again.
 // -----------------------------------------------------------------------------
 
 import { DEVICE_TRANSPORTS, createLogger } from '@gladysassistant/integration-sdk';
@@ -68,6 +71,9 @@ export const HUB_TIMINGS = {
 
 const MAX_TRANSPORTS_PER_REQUEST = 100;
 const READ_CONCURRENCY = 4;
+// Measurements read per target, at most (a 5-minute interval on a 1-minute step).
+const MAX_ROWS = 20;
+const MAX_PENDING_EVENTS = 100;
 // The whole string, prefix included (SDK MAX_CAMERA_IMAGE_SIZE).
 export const MAX_CAMERA_IMAGE = 150 * 1024;
 export const CAMERA_PREFIX = 'image/png;base64,';
@@ -181,7 +187,8 @@ export class SmokePingHub {
   async start(config) {
     const saved = await this.store.load();
     const targets = saved.targets && typeof saved.targets === 'object' ? saved.targets : {};
-    this.saved = { targets };
+    const pending = Array.isArray(saved.pending) ? saved.pending : [];
+    this.saved = { targets, pending };
     await this.reconfigure(config);
   }
 
@@ -208,7 +215,7 @@ export class SmokePingHub {
     if (signature !== this.signature) {
       if (this.signature !== null && JSON.parse(this.signature)[0] !== config.url) {
         // Another SmokePing: the states saved for the previous one mean nothing.
-        this.saved.targets = {};
+        this.saved = { targets: {}, pending: [] };
         this.store.save(this.saved);
       }
       this.signature = signature;
@@ -310,9 +317,9 @@ export class SmokePingHub {
   }
 
   async read(client) {
-    let readings;
+    let result;
     try {
-      readings = await this.readTargets(client);
+      result = await this.readTargets(client);
     } catch (err) {
       if (!(err instanceof SmokePingError)) {
         throw err;
@@ -322,12 +329,25 @@ export class SmokePingHub {
     if (client !== this.client) {
       return false;
     }
-    return this.applySuccess(readings);
+    return this.applySuccess(result);
+  }
+
+  /**
+   * Rows read per target: the measurements of the alert window, plus the
+   * ones SmokePing may have made since the last reading (at its shortest
+   * step, 1 minute), so that no measurement is skipped between two readings.
+   */
+  rowsToRead() {
+    return Math.min(
+      MAX_ROWS,
+      this.config.rounds + Math.ceil(this.config.pollIntervalMs / 60_000) + 1,
+    );
   }
 
   /**
    * The menu when due, then the newest measurements of every target.
-   * @returns {Promise<object[]>} one reading per target with an RRD file
+   * @returns {Promise<{ readings: object[], failed: Set<string> }>} one reading per
+   *   target with an RRD file, and the paths that could not be read
    * @throws {SmokePingError} when the server cannot be read at all
    */
   async readTargets(client) {
@@ -338,12 +358,13 @@ export class SmokePingHub {
     }
     const labels = new Map(this.menu.map((entry) => [entry.path, entry.label]));
     const queue = this.menu.filter((entry) => !this.noFile.has(entry.path));
+    const count = this.rowsToRead();
     const readings = [];
     const failures = [];
     const worker = async () => {
       for (let entry = queue.shift(); entry; entry = queue.shift()) {
         try {
-          const data = await client.read(entry.path, this.config.rounds);
+          const data = await client.read(entry.path, count);
           if (!data) {
             this.noFile.add(entry.path);
             continue;
@@ -382,10 +403,13 @@ export class SmokePingHub {
     }
     // Menu order, whatever the order of the answers.
     const order = new Map(this.menu.map((entry, index) => [entry.path, index]));
-    return readings.sort((a, b) => order.get(a.path) - order.get(b.path));
+    return {
+      readings: readings.sort((a, b) => order.get(a.path) - order.get(b.path)),
+      failed: new Set(failures.map(({ path }) => path)),
+    };
   }
 
-  async applySuccess(readings) {
+  async applySuccess({ readings, failed = new Set() }) {
     let widgetChanged = this.error !== null || this.readAt === 0;
     if (this.error) {
       logger.info('SmokePing answers again');
@@ -405,16 +429,8 @@ export class SmokePingHub {
     let dirty = false;
     for (const reading of nameTargets(readings)) {
       const previous = this.targets.get(reading.path);
-      const saved = this.saved.targets[reading.path];
       const stale = now - reading.lastUpdate > 3 * reading.step * 1000 + this.config.pollIntervalMs;
       const rows = reading.measurements;
-      const evaluated = stale
-        ? {
-            state: previous?.state ?? saved?.state ?? 'unknown',
-            lossHigh: previous?.lossHigh ?? saved?.lossHigh ?? false,
-            latencyHigh: previous?.latencyHigh ?? saved?.latencyHigh ?? false,
-          }
-        : evaluate(rows, this.config, previous ?? saved);
       const target = {
         path: reading.path,
         label: reading.label,
@@ -425,8 +441,14 @@ export class SmokePingHub {
         measurements: rows,
         latest: rows.at(-1) ?? null,
         stale,
-        ...evaluated,
+        state: previous?.state ?? this.saved.targets[reading.path]?.state ?? 'unknown',
+        lossHigh: previous?.lossHigh ?? this.saved.targets[reading.path]?.lossHigh ?? false,
+        latencyHigh:
+          previous?.latencyHigh ?? this.saved.targets[reading.path]?.latencyHigh ?? false,
       };
+      if (!stale) {
+        dirty = this.walk(target, previous, events) || dirty;
+      }
       next.set(target.path, target);
       if (
         !previous ||
@@ -438,32 +460,38 @@ export class SmokePingHub {
       }
       if (
         previous &&
-        ['state', 'lossHigh', 'latencyHigh'].some((key) => previous[key] !== target[key])
+        ['state', 'lossHigh', 'latencyHigh', 'stale'].some((key) => previous[key] !== target[key])
       ) {
         changed.add(target.path);
       }
-      if (!stale) {
-        dirty = this.transition(target, events) || dirty;
+    }
+    // A target that could not be read this time stays, without measurement.
+    for (const path of failed) {
+      const previous = this.targets.get(path);
+      if (previous) {
+        next.set(path, { ...previous, stale: true });
+        widgetChanged = widgetChanged || !previous.stale;
       }
     }
     if ([...this.targets.keys()].some((path) => !next.has(path))) {
       widgetChanged = true; // a target removed from the SmokePing configuration
     }
     this.targets = next;
-    // A target gone from the menu is forgotten (a group has no file either).
+    // A target gone from the menu is forgotten (a group has no file either);
+    // never on an empty menu, more likely a glitch than every target removed.
     const inMenu = new Set(this.menu.map((entry) => entry.path));
-    for (const path of Object.keys(this.saved.targets)) {
-      if (!inMenu.has(path)) {
-        delete this.saved.targets[path];
-        dirty = true;
+    if (inMenu.size > 0) {
+      for (const path of Object.keys(this.saved.targets)) {
+        if (!inMenu.has(path)) {
+          delete this.saved.targets[path];
+          dirty = true;
+        }
       }
     }
+    dirty = (await this.fireAll(events)) || dirty;
     // Written only when something changed: no wear of the SD card at every read.
     if (dirty) {
       this.store.save(this.saved);
-    }
-    for (const [key, target, extra] of events) {
-      await this.fire(key, target, extra);
     }
     await this.publishStates({ changed });
     return widgetChanged;
@@ -480,14 +508,44 @@ export class SmokePingHub {
   }
 
   /**
+   * Go through the measurements made since the last reading (only the
+   * newest one at the first sight of a target, or after a restart), one alert
+   * window at a time: no measurement is skipped, whatever the refresh
+   * interval. Updates the state of `target` and queues the scene events.
+   * @returns {boolean} whether the saved state changed
+   */
+  walk(target, previous, events) {
+    const rows = target.measurements;
+    const seen = previous?.walkedTo ?? null;
+    let first = rows.length - 1;
+    if (seen !== null) {
+      first = rows.findIndex((row) => row.time > seen);
+      if (first === -1) {
+        target.walkedTo = seen;
+        return false; // no new measurement
+      }
+    }
+    let dirty = false;
+    for (let k = Math.max(0, first); k < rows.length; k += 1) {
+      const window = rows.slice(Math.max(0, k - this.config.rounds + 1), k + 1);
+      Object.assign(target, evaluate(window, this.config, target));
+      dirty = this.transition(target, window, events) || dirty;
+    }
+    target.walkedTo = rows.at(-1)?.time ?? seen;
+    return dirty;
+  }
+
+  /**
    * Compare a target with its last saved state; queue the scene events.
    * @param {object} target with its new state and alerts
+   * @param {object[]} window the measurements of the alert window, the newest last
    * @param {Array} events where the events to fire are pushed
    * @returns {boolean} whether the saved state changed
    */
-  transition(target, events) {
+  transition(target, window, events) {
     const previous = this.saved.targets[target.path];
-    const { state, lossHigh, latencyHigh, latest } = target;
+    const { state, lossHigh, latencyHigh } = target;
+    const row = window.at(-1);
     if (state === 'unknown') {
       return false;
     }
@@ -502,46 +560,63 @@ export class SmokePingHub {
     let since = previous?.since ?? now;
     if (previous?.state !== state) {
       // An outage starts at its first measurement with every ping lost.
-      since =
-        state === 'down'
-          ? Math.min(now, target.measurements[0]?.time ?? now)
-          : (latest?.time ?? now);
+      since = Math.min(now, (state === 'down' ? window[0]?.time : row?.time) ?? now);
     }
     this.saved.targets[target.path] = { state, since, lossHigh, latencyHigh };
     if (!previous) {
       return true; // first sight: no event
     }
-    if (previous.state !== state && state === 'down') {
-      logger.info(`${target.name} is unreachable`);
-      events.push([TRIGGERS.UNREACHABLE, target, {}]);
-    } else if (previous.state === 'down' && state === 'up') {
-      const minutes = Math.max(0, Math.round((now - previous.since) / 60_000));
-      logger.info(`${target.name} is reachable again after ${minutes} min`);
-      events.push([TRIGGERS.REACHABLE, target, { downtime_minutes: minutes }]);
-    }
-    if (lossHigh && previous.lossHigh === false) {
-      logger.info(`${target.name}: packet loss ${latest.lossPercent} %`);
-      events.push([TRIGGERS.LOSS_HIGH, target, { packet_loss: latest.lossPercent }]);
-    }
-    if (latencyHigh && previous.latencyHigh === false) {
-      logger.info(`${target.name}: median latency ${latest.medianMs} ms`);
-      events.push([TRIGGERS.LATENCY_HIGH, target, { latency: latest.medianMs }]);
-    }
-    return true;
-  }
-
-  async fire(key, target, extra = {}) {
-    const data = {
+    const data = (extra = {}) => ({
       device: targetIds(this.gladys, target.path).device,
       target: target.name,
       group: target.group,
       ...extra,
-    };
-    try {
-      await this.gladys.publishSceneEvent(key, data);
-    } catch (err) {
-      logger.warn(`Scene event ${key} refused: ${err.message}`);
+    });
+    if (previous.state !== state && state === 'down') {
+      logger.info(`${target.name} is unreachable`);
+      events.push([TRIGGERS.UNREACHABLE, data()]);
+    } else if (previous.state === 'down' && state === 'up') {
+      const minutes = Math.max(0, Math.round(((row?.time ?? now) - previous.since) / 60_000));
+      logger.info(`${target.name} is reachable again after ${minutes} min`);
+      events.push([TRIGGERS.REACHABLE, data({ downtime_minutes: minutes })]);
     }
+    if (lossHigh && previous.lossHigh === false) {
+      logger.info(`${target.name}: packet loss ${row.lossPercent} %`);
+      events.push([TRIGGERS.LOSS_HIGH, data({ packet_loss: row.lossPercent })]);
+    }
+    if (latencyHigh && previous.latencyHigh === false) {
+      logger.info(`${target.name}: median latency ${row.medianMs} ms`);
+      events.push([TRIGGERS.LATENCY_HIGH, data({ latency: row.medianMs })]);
+    }
+    return true;
+  }
+
+  /**
+   * Fire the new scene events after the ones Gladys refused before (kept in
+   * /data with the states, so that a transition saved is never lost).
+   * @returns {Promise<boolean>} whether the list kept in /data changed
+   */
+  async fireAll(events) {
+    const queue = [...(this.saved.pending ?? []), ...events];
+    if (queue.length === 0) {
+      return false;
+    }
+    const refused = [];
+    for (const [key, data] of queue) {
+      try {
+        await this.gladys.publishSceneEvent(key, data);
+      } catch (err) {
+        refused.push([key, data]);
+        this.problems.fail('event', `Scene event ${key} refused, kept for later: ${err.message}`);
+      }
+    }
+    if (refused.length === 0) {
+      this.problems.recover('event', 'Scene events accepted again');
+    }
+    const before = JSON.stringify(this.saved.pending ?? []);
+    // At most a hundred kept: an hour of outage of Gladys is not a backlog.
+    this.saved.pending = refused.slice(-MAX_PENDING_EVENTS);
+    return JSON.stringify(this.saved.pending) !== before;
   }
 
   // --- Publishing to Gladys ----------------------------------------------------

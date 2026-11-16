@@ -453,3 +453,58 @@ test('the internal timer reads SmokePing and publishes the changes, without any 
   assert.ok(world.smokeping.calls.length > reads);
   assert.equal(world.fake.lastState(idsOf(world, 'DNS.Google').feature('reachable')), 0);
 });
+
+test('an outage between two readings is still seen, measurement by measurement', async (t) => {
+  const world = await createWorld({ config: config({ rounds: '2', poll_interval: '300' }) });
+  t.after(() => world.app.stop());
+  // Five measurements between two readings: three lost, then back.
+  world.smokeping.set('DNS.Google', { lost: 10 });
+  for (let i = 0; i < 3; i += 1) {
+    world.clock.advance(MINUTE);
+    world.smokeping.measure();
+  }
+  world.smokeping.set('DNS.Google', { lost: 0 });
+  for (let i = 0; i < 2; i += 1) {
+    world.clock.advance(MINUTE);
+    world.smokeping.measure();
+  }
+  await world.hub.pollNow();
+  assert.deepEqual(
+    world.fake.sceneEvents.map((event) => [event.key, event.data.target]),
+    [
+      [TRIGGERS.UNREACHABLE, 'Google DNS'],
+      [TRIGGERS.REACHABLE, 'Google DNS'],
+    ],
+  );
+  // Three measurements lost: from the first one to the first answer.
+  assert.equal(world.fake.sceneEvents[1].data.downtime_minutes, 3);
+});
+
+test('a scene event Gladys refuses is kept, then sent again', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  const publish = t.mock.method(world.gladys, 'publishSceneEvent', async () => {
+    throw new Error('Gladys is restarting');
+  });
+  world.smokeping.set('DNS.Google', { lost: 10 });
+  await world.step();
+  assert.equal(publish.mock.callCount(), 1);
+  assert.equal(world.hub.saved.pending.length, 1);
+  publish.mock.restore();
+  await world.step();
+  assert.deepEqual(
+    world.fake.sceneEvents.map((event) => event.key),
+    [TRIGGERS.UNREACHABLE],
+  );
+  assert.deepEqual(world.hub.saved.pending, []);
+});
+
+test('an empty menu (a glitch) forgets no saved state', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  const saved = Object.keys(world.hub.saved.targets);
+  assert.equal(saved.length, 4);
+  world.smokeping.menu = '<html><title>SmokePing</title></html>';
+  await world.fake.scanRequest();
+  assert.deepEqual(Object.keys(world.hub.saved.targets), saved);
+});
