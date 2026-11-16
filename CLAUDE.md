@@ -31,16 +31,21 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
+index.js                          SDK wiring only: src/app.js registers the handlers before connect()
+src/app.js                        every SDK handler -> the hub (also used by the tests)
+src/hub.js                        reading timer, alert rules, states, transitions -> scene events, graphs, views
+src/devices.js                    one device per SmokePing target: features, names, values
+src/smokeping/client.js           SmokePing over HTTP: menu, RRD files (Range), graph PNG, errors by kind
+src/smokeping/rrd.js              RRD reader in plain JavaScript (rrdtool layouts, checked)
 src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
+src/widgets.js                    dashboard widget `smokeping` (manifest `widgets`)
+src/texts.js                      connection, error, state, report and action texts (4 languages), ActionFailure
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
+src/store.js, src/problems.js     /data/smokeping-state.json; one log line per repeated failure
 gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
+docs/{en,fr,de,es}.md             user documentation, re-hosted by Gladys (en and fr mandatory)
 test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+                                  and helpers/fakeSmokePing.js (checked against test/fixtures/smokeping)
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
 
@@ -58,7 +63,7 @@ test/                             node --test, against the SDK's fake Gladys (in
   one, `0`/`0` for a feature without a range (text, image...). A missing one
   can pass the publication on a core that does not check it, then fail when
   the user clicks "Add" (HTTP 422 `t_device_feature.min cannot be null`). The
-  SDK's fake Gladys refuses it on publication, and `test/devices.test.js`
+  SDK's fake Gladys refuses it on publication, and `test/gladys-rules.test.js`
   checks them.
 - **The container rootfs is read-only.** Write only under `/data`, the one
   writable volume. Never log tokens, passwords or API keys.
@@ -78,8 +83,10 @@ test/                             node --test, against the SDK's fake Gladys (in
   `type: "provider"`: 5.1.0). `test/manifest.test.js` ties the manifest to the
   code (defaults, action, scene and widget handlers): change both sides
   together.
-- **User-facing text** is bilingual (English and French): action messages,
-  manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
+- **User-facing text** exists in English, French, German and Spanish: action
+  messages, widget content, feature names, scene outputs, manifest texts, and
+  `docs/en.md`, `docs/fr.md`, `docs/de.md`, `docs/es.md`, kept in sync
+  (`test/i18n.test.js` checks the languages and the doc sections).
 - **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
   in English. Tests never touch the network.
 
@@ -222,6 +229,42 @@ code de ce dépôt. Compléter ce fichier quand un nouveau piège est découvert
 - Les filtres de scène ne font qu'égalité et appartenance : un seuil reste le travail d'un capteur.
 - **Les clés de widgets, de déclencheurs et d'actions sont figées une fois publiées.**
 - `gladys_version` `>=5.1.0` dès qu'il y a widgets, déclencheurs ou actions de scène.
+
+## SmokePing (propre à ce dépôt)
+
+Vérifié le 16/11/2026 contre `lscr.io/linuxserver/smokeping` (SmokePing 2.9.0, rrdtool 1.9, x86_64), réseau
+`gladys-test-smokeping`, cibles 1.1.1.1, 8.8.8.8, 192.0.2.1 (injoignable) et un conteneur alpine avec
+`tc qdisc … netem loss 30% delay 40ms 15ms` (pertes réelles, ~20-55 % aller-retour).
+
+- **Pas d'API JSON.** Le CGI ne rend que du HTML et des PNG (les chiffres de la légende sont dessinés dans l'image).
+  Les « charts » (`?target=_charts.loss`) ne listent que le top N et dessinent un graphique par entrée : écartés.
+- **Liste des cibles** : `smokeping.cgi?filter=.` (filtre du menu, SmokePing ≥ 2.7) rend **à plat** tous les nœuds
+  dont le `menu` ou le `title` correspond : cibles **et groupes**, plus `_charts*`. On ne distingue une cible d'un
+  groupe que par son fichier RRD (un groupe n'en a pas → 404). Le libellé est le `menu`, pas le `title` (qui n'est
+  pas dans le menu). Les cibles `hide = yes` n'apparaissent pas ; les cibles multi-hôtes (`host = /a /b`) n'ont pas
+  de fichier.
+- **Graphique** : `smokeping.cgi?displaymode=a;start=<epoch>;end=<epoch>;target=<chemin>` rend directement le PNG
+  (mode « ajax » du navigateur, ~25 Ko en 697×310, légende comprise). Envoyé à Gladys en `image/png;base64,…` :
+  le front l'affiche ; **non vérifié** avec les canaux de messagerie (Telegram…), qui attendent d'habitude du JPEG.
+- **Mesures** : fichiers `data/<Groupe>/<Cible>.rrd` (un `.` du chemin = un `/`), à exposer par une ligne `Alias`
+  (linuxserver : `site-confs/*.conf` dans `/config`, chargé par `IncludeOptional`). Apache honore `Range` (206 +
+  `Content-Range: bytes a-b/total`) ; un serveur qui l'ignore (200) donne le fichier entier, accepté.
+  DS : `uptime`, `loss` (**nombre** de pings perdus, moyenné : fractionnaire), `median` (**secondes**),
+  `ping1..pingN` (**triés**, les perdus en `NaN` à la fin). RRA 0 = AVERAGE, 1 pas par ligne. Pas par défaut 300 s.
+  Une ligne entièrement perdue : `loss = pings`, tout le reste `NaN`.
+- **Format RRD** : disposition mémoire C de `rrd_format.h`, dépendante de la machine (taille de `unsigned long` et
+  `time_t`, alignement). Les sections se suivent **sans bourrage entre elles** (sizeof de chaque struct). Le lecteur
+  connaît le 64 bits petit-boutiste et l'ARM 32 bits, et **refuse** ce qui ne se vérifie pas (cookie flottant, noms,
+  `cur_row < row_cnt`, taille totale annoncée par `Content-Range` égale à celle calculée). `cur_row` désigne la
+  **dernière ligne écrite** ; la ligne la plus récente se termine à `floor(last_up / step) * step`.
+- **Gigue** : écart type des pings reçus de la dernière mesure (comme le « sd » de SmokePing), pas la gigue RFC 3550.
+- **Alertes** : lues dans les `rounds` dernières lignes du RRD à chaque passage (rien à compter côté conteneur, un
+  redémarrage ne perd rien). Injoignable = toutes les lignes à 100 % ; de retour dès un ping ; pertes/latence au
+  seuil sur toutes les lignes, fin dès que la dernière repasse dessous. Injoignable clôt les deux autres sans
+  événement. Une cible dont la dernière mesure date de plus de 3 pas (+ l'intervalle de lecture) est « périmée » :
+  rien publié, badge `unreachable`, état gardé.
+- Redirections non suivies : `http://hôte/` de l'image linuxserver redirige vers `/smokeping/` ; la config ajoute
+  donc `/smokeping/smokeping.cgi` à une adresse sans chemin.
 
 ## Store
 

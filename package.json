@@ -1,8 +1,8 @@
 {
-  "name": "gladys-integration-template-js",
+  "name": "gladys-smokeping",
   "version": "1.0.0",
   "private": true,
-  "description": "Official starter template to build an external integration for Gladys Assistant with the JavaScript SDK.",
+  "description": "SmokePing in Gladys Assistant: latency, packet loss and jitter of each target, the SmokePing graph as a camera, scene triggers on loss, latency and outages.",
   "type": "module",
   "main": "index.js",
   "scripts": {

@@ -30,6 +30,20 @@ Gladys before reporting a problem.
 
 In scope: the code of this repository and the Docker image it publishes.
 
+What the integration handles:
+
+- the **user and password** of the web server of SmokePing (optional),
+  stored by Gladys in the integration configuration (never written to
+  `/data`, never logged); they are only sent, in the `Authorization` header,
+  to the addresses configured (the web interface and the RRD files), and
+  redirects are not followed so they never reach another host;
+- `/data/smokeping-state.json`: the last state and alerts of each target
+  and since when (no secret);
+- network: HTTP(S) GET requests to the SmokePing web interface and to the
+  folder of its RRD files, nothing else; no port is opened. The RRD files are
+  parsed as untrusted input (sizes and layout checked before any read).
+
 Out of scope: Gladys Assistant itself (see its
 [security policy](https://github.com/GladysAssistant/Gladys/security/policy)),
-and the third-party services and devices the integration talks to.
+SmokePing itself, and the exposure of its RRD files by its web server (the
+setup guide suggests restricting it like the SmokePing page).
