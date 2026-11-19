@@ -1,177 +1,914 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "SmokePing",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Your SmokePing targets in Gladys: latency, packet loss, jitter, graph, and scenes on alerts.",
+    "fr": "Vos cibles SmokePing dans Gladys : latence, pertes, gigue, graphique, et scènes sur alerte.",
+    "de": "Deine SmokePing-Ziele in Gladys: Latenz, Paketverlust, Jitter, Grafik und Szenen bei Alarm.",
+    "es": "Sus objetivos de SmokePing en Gladys: latencia, pérdidas, jitter, gráfico y escenas al alertar."
   },
   "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "docker_image": "ghcr.io/guim31/gladys-smokeping:1.0.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/guim31/gladys-smokeping/main/cover.png",
+  "categories": ["network"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your SmokePing",
+        "fr": "Votre SmokePing",
+        "de": "Dein SmokePing",
+        "es": "Su SmokePing"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "SmokePing has no API: Gladys reads its graphs from the web interface and its measurements from its RRD files, which you serve read-only with one line of web server configuration (see the guide). Then add the targets to follow from the Discover tab.",
+        "fr": "SmokePing n'a pas d'API : Gladys lit ses graphiques sur l'interface web et ses mesures dans ses fichiers RRD, que vous servez en lecture seule par une ligne de configuration du serveur web (voir le guide). Ajoutez ensuite les cibles à suivre depuis l'onglet Découverte.",
+        "de": "SmokePing hat keine API: Gladys liest die Grafiken über die Weboberfläche und die Messungen aus den RRD-Dateien, die du mit einer Zeile Webserver-Konfiguration schreibgeschützt bereitstellst (siehe Anleitung). Lege dann die zu verfolgenden Ziele im Tab „Entdecken“ an.",
+        "es": "SmokePing no tiene API: Gladys lee sus gráficos en la interfaz web y sus mediciones en sus archivos RRD, que usted sirve en solo lectura con una línea de configuración del servidor web (consulte la guía). Después añada los objetivos que desea seguir desde la pestaña Descubrir."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/guim31/gladys-smokeping/blob/main/docs/en.md",
+          "label": {
+            "en": "Setup guide",
+            "fr": "Guide d'installation",
+            "de": "Einrichtungsanleitung",
+            "es": "Guía de instalación"
+          }
+        },
+        {
+          "url": "https://oss.oetiker.ch/smokeping/",
+          "label": {
+            "en": "SmokePing",
+            "fr": "SmokePing",
+            "de": "SmokePing",
+            "es": "SmokePing"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "url",
+      "type": "string",
+      "label": {
+        "en": "SmokePing address",
+        "fr": "Adresse de SmokePing",
+        "de": "SmokePing-Adresse",
+        "es": "Dirección de SmokePing"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "description": {
+        "en": "Address of the SmokePing web interface, or of its smokeping.cgi.",
+        "fr": "Adresse de l'interface web de SmokePing, ou de son smokeping.cgi.",
+        "de": "Adresse der SmokePing-Weboberfläche oder ihres smokeping.cgi.",
+        "es": "Dirección de la interfaz web de SmokePing, o de su smokeping.cgi."
+      },
+      "placeholder": {
+        "en": "e.g. http://192.168.1.2/smokeping/",
+        "fr": "ex. http://192.168.1.2/smokeping/",
+        "de": "z. B. http://192.168.1.2/smokeping/",
+        "es": "p. ej. http://192.168.1.2/smokeping/"
+      },
+      "required": true
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+      "key": "data_url",
+      "type": "string",
+      "label": {
+        "en": "RRD files address (optional)",
+        "fr": "Adresse des fichiers RRD (facultatif)",
+        "de": "Adresse der RRD-Dateien (optional)",
+        "es": "Dirección de los archivos RRD (opcional)"
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "description": {
+        "en": "Where the data folder of SmokePing is served. Empty: /smokeping-data/ on the same server, as in the guide.",
+        "fr": "Où le dossier data de SmokePing est servi. Vide : /smokeping-data/ sur le même serveur, comme dans le guide.",
+        "de": "Wo der data-Ordner von SmokePing bereitgestellt wird. Leer: /smokeping-data/ auf demselben Server, wie in der Anleitung.",
+        "es": "Dónde se sirve la carpeta data de SmokePing. Vacío: /smokeping-data/ en el mismo servidor, como en la guía."
+      },
+      "placeholder": {
+        "en": "e.g. http://192.168.1.2/smokeping-data/",
+        "fr": "ex. http://192.168.1.2/smokeping-data/",
+        "de": "z. B. http://192.168.1.2/smokeping-data/",
+        "es": "p. ej. http://192.168.1.2/smokeping-data/"
+      },
+      "required": false
     },
     {
-      "key": "unit",
-      "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
+      "key": "username",
+      "type": "string",
+      "label": {
+        "en": "User (optional)",
+        "fr": "Utilisateur (facultatif)",
+        "de": "Benutzer (optional)",
+        "es": "Usuario (opcional)"
+      },
+      "description": {
+        "en": "Only if the web server asks for a login (htpasswd).",
+        "fr": "Seulement si le serveur web demande un identifiant (htpasswd).",
+        "de": "Nur wenn der Webserver eine Anmeldung verlangt (htpasswd).",
+        "es": "Solo si el servidor web pide un inicio de sesión (htpasswd)."
+      },
+      "required": false
+    },
+    {
+      "key": "password",
+      "type": "secret",
+      "label": {
+        "en": "Password (optional)",
+        "fr": "Mot de passe (facultatif)",
+        "de": "Passwort (optional)",
+        "es": "Contraseña (opcional)"
+      },
+      "description": {
+        "en": "The password of this user.",
+        "fr": "Le mot de passe de cet utilisateur.",
+        "de": "Das Passwort dieses Benutzers.",
+        "es": "La contraseña de este usuario."
+      },
+      "required": false
+    },
+    {
+      "key": "alerts",
+      "type": "section",
+      "label": {
+        "en": "Alerts",
+        "fr": "Alertes",
+        "de": "Alarme",
+        "es": "Alertas"
+      },
+      "description": {
+        "en": "The thresholds of the scene triggers and of the widget colours.",
+        "fr": "Les seuils des déclencheurs de scène et des couleurs du widget.",
+        "de": "Die Schwellen der Szenen-Auslöser und der Widget-Farben.",
+        "es": "Los umbrales de los disparadores de escena y de los colores del widget."
+      }
+    },
+    {
+      "key": "loss_threshold",
+      "type": "number",
+      "label": {
+        "en": "Packet loss threshold (%)",
+        "fr": "Seuil de pertes de paquets (%)",
+        "de": "Schwelle für Paketverlust (%)",
+        "es": "Umbral de pérdida de paquetes (%)"
+      },
+      "description": {
+        "en": "Above it, a target is degraded.",
+        "fr": "Au-delà, une cible est dégradée.",
+        "de": "Darüber gilt ein Ziel als gestört.",
+        "es": "Por encima, un objetivo está degradado."
+      },
       "required": false,
-      "default": "celsius",
+      "default": 10,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "key": "latency_threshold",
+      "type": "number",
+      "label": {
+        "en": "Latency threshold (ms)",
+        "fr": "Seuil de latence (ms)",
+        "de": "Latenzschwelle (ms)",
+        "es": "Umbral de latencia (ms)"
+      },
+      "description": {
+        "en": "Median latency above which a target is degraded.",
+        "fr": "Latence médiane au-delà de laquelle une cible est dégradée.",
+        "de": "Median-Latenz, ab der ein Ziel als gestört gilt.",
+        "es": "Latencia mediana por encima de la cual un objetivo está degradado."
+      },
+      "required": false,
+      "default": 100,
+      "min": 1,
+      "max": 60000
+    },
+    {
+      "key": "rounds",
+      "type": "select",
+      "label": {
+        "en": "Measurements in a row",
+        "fr": "Mesures consécutives",
+        "de": "Messungen in Folge",
+        "es": "Mediciones seguidas"
+      },
+      "description": {
+        "en": "How many SmokePing measurements in a row beyond a threshold (or with every ping lost) before an alert: more avoids false alarms.",
+        "fr": "Combien de mesures SmokePing consécutives au-delà d'un seuil (ou sans aucune réponse) avant une alerte : plus évite les fausses alertes.",
+        "de": "Wie viele SmokePing-Messungen in Folge über einer Schwelle (oder ganz ohne Antwort) bis zum Alarm: mehr vermeidet Fehlalarme.",
+        "es": "Cuántas mediciones seguidas de SmokePing por encima de un umbral (o sin ninguna respuesta) antes de una alerta: más evita falsas alarmas."
+      },
+      "required": false,
+      "default": "2",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        {
+          "value": "1",
+          "label": {
+            "en": "1",
+            "fr": "1",
+            "de": "1",
+            "es": "1"
+          }
+        },
+        {
+          "value": "2",
+          "label": {
+            "en": "2",
+            "fr": "2",
+            "de": "2",
+            "es": "2"
+          }
+        },
+        {
+          "value": "3",
+          "label": {
+            "en": "3",
+            "fr": "3",
+            "de": "3",
+            "es": "3"
+          }
+        },
+        {
+          "value": "5",
+          "label": {
+            "en": "5",
+            "fr": "5",
+            "de": "5",
+            "es": "5"
+          }
+        }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "key": "options",
+      "type": "section",
+      "label": {
+        "en": "Options",
+        "fr": "Options",
+        "de": "Optionen",
+        "es": "Opciones"
+      }
+    },
+    {
+      "key": "poll_interval",
+      "type": "select",
+      "label": {
+        "en": "Refresh interval",
+        "fr": "Intervalle de rafraîchissement",
+        "de": "Aktualisierungsintervall",
+        "es": "Intervalo de actualización"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "How often SmokePing is read (it measures every 5 minutes by default).",
+        "fr": "À quelle fréquence SmokePing est lu (il mesure toutes les 5 minutes par défaut).",
+        "de": "Wie oft SmokePing gelesen wird (es misst standardmäßig alle 5 Minuten).",
+        "es": "Con qué frecuencia se lee SmokePing (mide cada 5 minutos por defecto)."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": "60",
+      "options": [
+        {
+          "value": "60",
+          "label": {
+            "en": "1 minute",
+            "fr": "1 minute",
+            "de": "1 Minute",
+            "es": "1 minuto"
+          }
+        },
+        {
+          "value": "120",
+          "label": {
+            "en": "2 minutes",
+            "fr": "2 minutes",
+            "de": "2 Minuten",
+            "es": "2 minutos"
+          }
+        },
+        {
+          "value": "300",
+          "label": {
+            "en": "5 minutes",
+            "fr": "5 minutes",
+            "de": "5 Minuten",
+            "es": "5 minutos"
+          }
+        }
+      ]
+    },
+    {
+      "key": "graph_period",
+      "type": "select",
+      "label": {
+        "en": "Graph period",
+        "fr": "Période du graphique",
+        "de": "Zeitraum der Grafik",
+        "es": "Periodo del gráfico"
+      },
+      "description": {
+        "en": "Time span of the graph shown as the camera image of each target.",
+        "fr": "Durée couverte par le graphique montré comme image de caméra de chaque cible.",
+        "de": "Zeitspanne der Grafik, die als Kamerabild jedes Ziels gezeigt wird.",
+        "es": "Periodo del gráfico mostrado como imagen de cámara de cada objetivo."
+      },
+      "required": false,
+      "default": "3h",
+      "options": [
+        {
+          "value": "3h",
+          "label": {
+            "en": "3 hours",
+            "fr": "3 heures",
+            "de": "3 Stunden",
+            "es": "3 horas"
+          }
+        },
+        {
+          "value": "30h",
+          "label": {
+            "en": "30 hours",
+            "fr": "30 heures",
+            "de": "30 Stunden",
+            "es": "30 horas"
+          }
+        },
+        {
+          "value": "10d",
+          "label": {
+            "en": "10 days",
+            "fr": "10 jours",
+            "de": "10 Tage",
+            "es": "10 días"
+          }
+        }
+      ]
+    },
+    {
+      "key": "language",
+      "type": "select",
+      "label": {
+        "en": "Language of the names",
+        "fr": "Langue des noms",
+        "de": "Sprache der Namen",
+        "es": "Idioma de los nombres"
+      },
+      "description": {
+        "en": "Language of the feature names (set when a device is added) and of the scene results.",
+        "fr": "Langue des noms des fonctionnalités (fixés à l'ajout d'un appareil) et des résultats de scène.",
+        "de": "Sprache der Funktionsnamen (beim Anlegen eines Geräts festgelegt) und der Szenen-Ergebnisse.",
+        "es": "Idioma de los nombres de las funciones (fijados al añadir un dispositivo) y de los resultados de escena."
+      },
+      "required": false,
+      "default": "fr",
+      "options": [
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais",
+            "de": "Englisch",
+            "es": "Inglés"
+          }
+        },
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français",
+            "de": "Französisch",
+            "es": "Francés"
+          }
+        },
+        {
+          "value": "de",
+          "label": {
+            "en": "German",
+            "fr": "Allemand",
+            "de": "Deutsch",
+            "es": "Alemán"
+          }
+        },
+        {
+          "value": "es",
+          "label": {
+            "en": "Spanish",
+            "fr": "Espagnol",
+            "de": "Spanisch",
+            "es": "Español"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
-      "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
+      "key": "test_connection",
+      "label": {
+        "en": "Test the connection",
+        "fr": "Tester la connexion",
+        "de": "Verbindung testen",
+        "es": "Probar la conexión"
+      },
+      "timeout_seconds": 60
     }
   ],
   "scene_triggers": [
     {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
+      "key": "target_unreachable",
+      "label": {
+        "en": "A target becomes unreachable",
+        "fr": "Une cible devient injoignable",
+        "de": "Ein Ziel wird unerreichbar",
+        "es": "Un objetivo se vuelve inaccesible"
+      },
       "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+        "en": "Every ping to a SmokePing target is lost, as many measurements in a row as set in the configuration.",
+        "fr": "Tous les pings d'une cible SmokePing sont perdus, autant de mesures de suite que réglé dans la configuration.",
+        "de": "Alle Pings zu einem SmokePing-Ziel gehen verloren, so viele Messungen in Folge wie eingestellt.",
+        "es": "Se pierden todos los pings a un objetivo de SmokePing, tantas mediciones seguidas como se configuró."
       },
       "fields": [
         {
           "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
           "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
+          "source": "devices",
+          "label": {
+            "en": "Targets (empty: any)",
+            "fr": "Cibles (vide : toutes)",
+            "de": "Ziele (leer: alle)",
+            "es": "Objetivos (vacío: todos)"
+          }
         }
       ],
       "variables": [
         {
           "key": "target",
           "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
+          "label": {
+            "en": "Target name",
+            "fr": "Nom de la cible",
+            "de": "Name des Ziels",
+            "es": "Nombre del objetivo"
+          }
+        },
+        {
+          "key": "group",
+          "type": "string",
+          "label": {
+            "en": "Group",
+            "fr": "Groupe",
+            "de": "Gruppe",
+            "es": "Grupo"
+          }
+        }
+      ]
+    },
+    {
+      "key": "target_reachable",
+      "label": {
+        "en": "A target is reachable again",
+        "fr": "Une cible est de nouveau joignable",
+        "de": "Ein Ziel ist wieder erreichbar",
+        "es": "Un objetivo vuelve a ser accesible"
+      },
+      "description": {
+        "en": "An unreachable target answers again, with the length of the outage.",
+        "fr": "Une cible injoignable répond de nouveau, avec la durée de la coupure.",
+        "de": "Ein unerreichbares Ziel antwortet wieder, mit der Dauer des Ausfalls.",
+        "es": "Un objetivo inaccesible responde de nuevo, con la duración del corte."
+      },
+      "fields": [
+        {
+          "key": "device",
+          "type": "multi_select",
+          "source": "devices",
+          "label": {
+            "en": "Targets (empty: any)",
+            "fr": "Cibles (vide : toutes)",
+            "de": "Ziele (leer: alle)",
+            "es": "Objetivos (vacío: todos)"
+          }
+        }
+      ],
+      "variables": [
+        {
+          "key": "target",
+          "type": "string",
+          "label": {
+            "en": "Target name",
+            "fr": "Nom de la cible",
+            "de": "Name des Ziels",
+            "es": "Nombre del objetivo"
+          }
+        },
+        {
+          "key": "group",
+          "type": "string",
+          "label": {
+            "en": "Group",
+            "fr": "Groupe",
+            "de": "Gruppe",
+            "es": "Grupo"
+          }
+        },
+        {
+          "key": "downtime_minutes",
+          "type": "number",
+          "label": {
+            "en": "Outage length (minutes)",
+            "fr": "Durée de la coupure (minutes)",
+            "de": "Dauer des Ausfalls (Minuten)",
+            "es": "Duración del corte (minutos)"
+          }
+        }
+      ]
+    },
+    {
+      "key": "packet_loss_high",
+      "label": {
+        "en": "Packet loss above the threshold",
+        "fr": "Pertes de paquets au-dessus du seuil",
+        "de": "Paketverlust über der Schwelle",
+        "es": "Pérdida de paquetes sobre el umbral"
+      },
+      "description": {
+        "en": "The packet loss of a reachable target reaches the threshold of the configuration, measurements in a row.",
+        "fr": "Les pertes d'une cible joignable atteignent le seuil de la configuration, sur des mesures consécutives.",
+        "de": "Der Paketverlust eines erreichbaren Ziels erreicht die eingestellte Schwelle, Messungen in Folge.",
+        "es": "La pérdida de un objetivo accesible alcanza el umbral configurado, en mediciones seguidas."
+      },
+      "fields": [
+        {
+          "key": "device",
+          "type": "multi_select",
+          "source": "devices",
+          "label": {
+            "en": "Targets (empty: any)",
+            "fr": "Cibles (vide : toutes)",
+            "de": "Ziele (leer: alle)",
+            "es": "Objetivos (vacío: todos)"
+          }
+        }
+      ],
+      "variables": [
+        {
+          "key": "target",
+          "type": "string",
+          "label": {
+            "en": "Target name",
+            "fr": "Nom de la cible",
+            "de": "Name des Ziels",
+            "es": "Nombre del objetivo"
+          }
+        },
+        {
+          "key": "group",
+          "type": "string",
+          "label": {
+            "en": "Group",
+            "fr": "Groupe",
+            "de": "Gruppe",
+            "es": "Grupo"
+          }
+        },
+        {
+          "key": "packet_loss",
+          "type": "number",
+          "label": {
+            "en": "Packet loss (%)",
+            "fr": "Pertes de paquets (%)",
+            "de": "Paketverlust (%)",
+            "es": "Pérdida de paquetes (%)"
+          }
+        }
+      ]
+    },
+    {
+      "key": "latency_high",
+      "label": {
+        "en": "Latency above the threshold",
+        "fr": "Latence au-dessus du seuil",
+        "de": "Latenz über der Schwelle",
+        "es": "Latencia sobre el umbral"
+      },
+      "description": {
+        "en": "The median latency of a target reaches the threshold of the configuration, measurements in a row.",
+        "fr": "La latence médiane d'une cible atteint le seuil de la configuration, sur des mesures consécutives.",
+        "de": "Die Median-Latenz eines Ziels erreicht die eingestellte Schwelle, Messungen in Folge.",
+        "es": "La latencia mediana de un objetivo alcanza el umbral configurado, en mediciones seguidas."
+      },
+      "fields": [
+        {
+          "key": "device",
+          "type": "multi_select",
+          "source": "devices",
+          "label": {
+            "en": "Targets (empty: any)",
+            "fr": "Cibles (vide : toutes)",
+            "de": "Ziele (leer: alle)",
+            "es": "Objetivos (vacío: todos)"
+          }
+        }
+      ],
+      "variables": [
+        {
+          "key": "target",
+          "type": "string",
+          "label": {
+            "en": "Target name",
+            "fr": "Nom de la cible",
+            "de": "Name des Ziels",
+            "es": "Nombre del objetivo"
+          }
+        },
+        {
+          "key": "group",
+          "type": "string",
+          "label": {
+            "en": "Group",
+            "fr": "Groupe",
+            "de": "Gruppe",
+            "es": "Grupo"
+          }
+        },
+        {
+          "key": "latency",
+          "type": "number",
+          "label": {
+            "en": "Median latency (ms)",
+            "fr": "Latence médiane (ms)",
+            "de": "Median-Latenz (ms)",
+            "es": "Latencia mediana (ms)"
+          }
         }
       ]
     }
   ],
   "scene_actions": [
     {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
+      "key": "get_target_status",
+      "label": {
+        "en": "State of a target",
+        "fr": "État d'une cible",
+        "de": "Zustand eines Ziels",
+        "es": "Estado de un objetivo"
       },
-      "timeout_seconds": 15,
+      "description": {
+        "en": "Reads the last measurement of a target for the next actions: reachable or not, latency, loss, jitter, and a ready-made sentence.",
+        "fr": "Lit la dernière mesure d'une cible pour les actions suivantes : joignable ou non, latence, pertes, gigue, et une phrase toute prête.",
+        "de": "Liest die letzte Messung eines Ziels für die nächsten Aktionen: erreichbar oder nicht, Latenz, Verlust, Jitter und einen fertigen Satz.",
+        "es": "Lee la última medición de un objetivo para las siguientes acciones: accesible o no, latencia, pérdidas, jitter y una frase lista."
+      },
+      "timeout_seconds": 60,
       "fields": [
         {
           "key": "device",
           "type": "select",
           "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
+          "label": {
+            "en": "Target",
+            "fr": "Cible",
+            "de": "Ziel",
+            "es": "Objetivo"
+          },
           "required": true
         }
       ],
       "outputs": [
         {
-          "key": "signalled",
+          "key": "reachable",
           "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
+          "label": {
+            "en": "Reachable",
+            "fr": "Joignable",
+            "de": "Erreichbar",
+            "es": "Accesible"
+          }
+        },
+        {
+          "key": "state",
+          "type": "string",
+          "label": {
+            "en": "State",
+            "fr": "État",
+            "de": "Zustand",
+            "es": "Estado"
+          }
+        },
+        {
+          "key": "name",
+          "type": "string",
+          "label": {
+            "en": "Target name",
+            "fr": "Nom de la cible",
+            "de": "Name des Ziels",
+            "es": "Nombre del objetivo"
+          }
+        },
+        {
+          "key": "group",
+          "type": "string",
+          "label": {
+            "en": "Group",
+            "fr": "Groupe",
+            "de": "Gruppe",
+            "es": "Grupo"
+          }
+        },
+        {
+          "key": "latency",
+          "type": "number",
+          "label": {
+            "en": "Median latency (ms)",
+            "fr": "Latence médiane (ms)",
+            "de": "Median-Latenz (ms)",
+            "es": "Latencia mediana (ms)"
+          }
+        },
+        {
+          "key": "packet_loss",
+          "type": "number",
+          "label": {
+            "en": "Packet loss (%)",
+            "fr": "Pertes de paquets (%)",
+            "de": "Paketverlust (%)",
+            "es": "Pérdida de paquetes (%)"
+          }
+        },
+        {
+          "key": "jitter",
+          "type": "number",
+          "label": {
+            "en": "Jitter (ms)",
+            "fr": "Gigue (ms)",
+            "de": "Jitter (ms)",
+            "es": "Jitter (ms)"
+          }
+        },
+        {
+          "key": "sentence",
+          "type": "string",
+          "label": {
+            "en": "Sentence",
+            "fr": "Phrase",
+            "de": "Satz",
+            "es": "Frase"
+          }
+        }
+      ]
+    },
+    {
+      "key": "count_unreachable_targets",
+      "label": {
+        "en": "Count the unreachable targets",
+        "fr": "Compter les cibles injoignables",
+        "de": "Unerreichbare Ziele zählen",
+        "es": "Contar los objetivos inaccesibles"
+      },
+      "description": {
+        "en": "Counts the targets unreachable, degraded and in total, on the server or in one group, and lists the unreachable ones.",
+        "fr": "Compte les cibles injoignables, dégradées et au total, sur le serveur ou dans un groupe, et liste les injoignables.",
+        "de": "Zählt die unerreichbaren, gestörten und alle Ziele, auf dem Server oder in einer Gruppe, und listet die unerreichbaren.",
+        "es": "Cuenta los objetivos inaccesibles, degradados y en total, en el servidor o en un grupo, y enumera los inaccesibles."
+      },
+      "timeout_seconds": 60,
+      "fields": [
+        {
+          "key": "group",
+          "type": "string",
+          "label": {
+            "en": "Group (empty: all)",
+            "fr": "Groupe (vide : tous)",
+            "de": "Gruppe (leer: alle)",
+            "es": "Grupo (vacío: todos)"
+          },
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "key": "unreachable",
+          "type": "number",
+          "label": {
+            "en": "Targets unreachable",
+            "fr": "Cibles injoignables",
+            "de": "Unerreichbare Ziele",
+            "es": "Objetivos inaccesibles"
+          }
+        },
+        {
+          "key": "degraded",
+          "type": "number",
+          "label": {
+            "en": "Targets degraded",
+            "fr": "Cibles dégradées",
+            "de": "Gestörte Ziele",
+            "es": "Objetivos degradados"
+          }
+        },
+        {
+          "key": "total",
+          "type": "number",
+          "label": {
+            "en": "Targets in total",
+            "fr": "Cibles au total",
+            "de": "Ziele insgesamt",
+            "es": "Objetivos en total"
+          }
+        },
+        {
+          "key": "names",
+          "type": "string",
+          "label": {
+            "en": "Names of the unreachable targets",
+            "fr": "Noms des cibles injoignables",
+            "de": "Namen der unerreichbaren Ziele",
+            "es": "Nombres de los objetivos inaccesibles"
+          }
         }
       ]
     }
   ],
   "widgets": [
     {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
+      "key": "smokeping",
+      "label": {
+        "en": "SmokePing",
+        "fr": "SmokePing",
+        "de": "SmokePing",
+        "es": "SmokePing"
+      },
       "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
+        "en": "Targets unreachable or degraded first, with their latency and packet loss.",
+        "fr": "Les cibles injoignables ou dégradées d'abord, avec leur latence et leurs pertes.",
+        "de": "Unerreichbare oder gestörte Ziele zuerst, mit Latenz und Paketverlust.",
+        "es": "Primero los objetivos inaccesibles o degradados, con su latencia y sus pérdidas."
       },
       "icon": "activity",
-      "action_timeout_seconds": 15
+      "action_timeout_seconds": 60,
+      "settings": [
+        {
+          "key": "group",
+          "type": "string",
+          "label": {
+            "en": "Group (empty: all)",
+            "fr": "Groupe (vide : tous)",
+            "de": "Gruppe (leer: alle)",
+            "es": "Grupo (vacío: todos)"
+          },
+          "description": {
+            "en": "The name of a SmokePing group, as in its menu.",
+            "fr": "Le nom d'un groupe SmokePing, comme dans son menu.",
+            "de": "Der Name einer SmokePing-Gruppe, wie in ihrem Menü.",
+            "es": "El nombre de un grupo de SmokePing, como en su menú."
+          },
+          "required": false
+        },
+        {
+          "key": "targets",
+          "type": "multi_select",
+          "source": "devices",
+          "label": {
+            "en": "Targets (empty: the group)",
+            "fr": "Cibles (vide : le groupe)",
+            "de": "Ziele (leer: die Gruppe)",
+            "es": "Objetivos (vacío: el grupo)"
+          },
+          "description": {
+            "en": "Chosen targets take precedence over the group. Only the devices added to Gladys can be chosen.",
+            "fr": "Les cibles choisies priment sur le groupe. Seuls les appareils ajoutés à Gladys peuvent être choisis.",
+            "de": "Gewählte Ziele haben Vorrang vor der Gruppe. Nur die in Gladys angelegten Geräte sind wählbar.",
+            "es": "Los objetivos elegidos prevalecen sobre el grupo. Solo se pueden elegir los dispositivos añadidos a Gladys."
+          },
+          "required": false
+        },
+        {
+          "key": "hide_summary",
+          "type": "boolean",
+          "label": {
+            "en": "Hide the summary tiles",
+            "fr": "Masquer les tuiles de synthèse",
+            "de": "Übersichtskacheln ausblenden",
+            "es": "Ocultar los mosaicos de resumen"
+          },
+          "required": false
+        },
+        {
+          "key": "hide_refresh",
+          "type": "boolean",
+          "label": {
+            "en": "Hide the Refresh button",
+            "fr": "Masquer le bouton Actualiser",
+            "de": "Schaltfläche „Aktualisieren“ ausblenden",
+            "es": "Ocultar el botón Actualizar"
+          },
+          "required": false
+        }
+      ]
     }
   ]
 }

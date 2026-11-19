@@ -1,41 +1,98 @@
 // -----------------------------------------------------------------------------
-// Scene actions (SDK v0.14+, Gladys 5.1+).
+// Scene action handlers (manifest `scene_actions`, Gladys 5.1+).
 //
-// A scene action is an OPERATION a scene author places in a scene, with
-// parameters and a result: "identify this device", "take a snapshot", "clean
-// these rooms". Each one is declared in the manifest `scene_actions` field
-// (key, label, `fields` in the config_schema grammar, scalar `outputs`) and
-// handled here, keyed by that same `key`; index.js registers every entry with
-// `gladys.onSceneAction(key, ...)`.
-//
-// Scene TRIGGERS are the other direction ("this happened"): they are fired by
-// the device that observes the event, see src/devices/motionSensor.js.
-//
-// The rules that matter:
-//   - `fields` arrive RESOLVED: scene variables substituted, defaults applied,
-//     validated by the core; a `"source": "devices"` field is the chosen
-//     device external_id;
-//   - resolve an object of the declared `outputs` (scalars only), readable by
-//     the following actions of the scene, or `undefined` for none. Keys not
-//     declared in the manifest are dropped by the core;
-//   - throwing fails THIS action only: the scene logs it and continues. A
-//     scene action is never a condition: return an output and let the scene
-//     author gate on it;
-//   - never fire a scene event as a consequence of a received action: a scene
-//     bound to that event would loop through the integration.
+// "Is this target reachable?" is already a scene condition on the device
+// feature. The actions are about what a condition cannot do: put the
+// measurements in a message ("Box: Reachable, 23.4 ms, 12 % loss, jitter
+// 3.1 ms"), and count the targets unreachable or degraded across the server
+// or a group, added to Gladys or not. Both read SmokePing again when the
+// last read is older than 30 seconds.
 // -----------------------------------------------------------------------------
 
-import { createLogger } from '@gladysassistant/integration-sdk';
-import { signalDevice } from './devices/index.js';
+import {
+  ACTION_TEXT,
+  ActionFailure,
+  SENTENCE_TEXT,
+  STATE_TEXT,
+  formatNumber,
+  labelled,
+  pick,
+} from './texts.js';
 
-const logger = createLogger({ name: 'scenes' });
+// Names listed in the `names` output, at most (the rest is counted).
+export const MAX_LISTED_NAMES = 20;
+
+const stateKey = (target) => (target.stale ? 'stale' : target.state);
+
+async function readFresh(hub) {
+  // An error of the last reading is not final: read again first.
+  if (!hub.client) {
+    hub.assertReadable();
+  }
+  await hub.refreshIfStale();
+  hub.assertReadable();
+}
 
 export const SCENE_ACTIONS = {
-  // The ack is awaited under the action's `timeout_seconds` (15 s in the
-  // manifest), counted from the moment the scene reaches the action.
-  async identify_device(gladys, { fields, config }) {
-    logger.info(`Scene action identify_device <- ${fields.device}`);
-    const signalled = await signalDevice(gladys, fields.device, config);
-    return { signalled };
+  async get_target_status(hub, { fields = {} }) {
+    await readFresh(hub);
+    const language = hub.config.language;
+    const target = hub.find(fields.device);
+    if (!target) {
+      throw new ActionFailure(ACTION_TEXT.unknownTarget);
+    }
+    const name = hub.displayName(target);
+    const latest = target.stale ? null : target.latest;
+    const stateText = pick(STATE_TEXT[stateKey(target)], language);
+    const parts = [stateText];
+    if (latest?.medianMs !== null && latest?.medianMs !== undefined) {
+      parts.push(`${formatNumber(latest.medianMs, language)} ms`);
+    }
+    if (latest?.lossPercent !== null && latest?.lossPercent !== undefined) {
+      parts.push(SENTENCE_TEXT[language].loss(formatNumber(latest.lossPercent, language)));
+    }
+    if (latest?.jitterMs !== null && latest?.jitterMs !== undefined) {
+      parts.push(SENTENCE_TEXT[language].jitter(formatNumber(latest.jitterMs, language)));
+    }
+    return {
+      reachable: !target.stale && target.state === 'up',
+      state: stateText,
+      name,
+      group: target.group,
+      latency: latest?.medianMs ?? 0,
+      packet_loss: latest?.lossPercent ?? 0,
+      jitter: latest?.jitterMs ?? 0,
+      sentence: `${labelled(name, parts.join(', '), language)}.`,
+    };
+  },
+
+  async count_unreachable_targets(hub, { fields = {} }) {
+    await readFresh(hub);
+    const group = typeof fields.group === 'string' ? fields.group.trim().toLowerCase() : '';
+    const targets = hub
+      .list()
+      .filter(
+        (target) =>
+          !group ||
+          target.group.toLowerCase() === group ||
+          target.path.split('.')[0].toLowerCase() === group,
+      );
+    const down = targets
+      .filter((target) => !target.stale && target.state === 'down')
+      .map((target) => hub.displayName(target))
+      .sort((a, b) => a.localeCompare(b));
+    const listed = down.slice(0, MAX_LISTED_NAMES);
+    return {
+      unreachable: down.length,
+      degraded: targets.filter(
+        (target) =>
+          !target.stale && target.state === 'up' && (target.lossHigh || target.latencyHigh),
+      ).length,
+      total: targets.length,
+      names:
+        down.length > listed.length
+          ? `${listed.join(', ')}, +${down.length - listed.length}`
+          : listed.join(', '),
+    };
   },
 };

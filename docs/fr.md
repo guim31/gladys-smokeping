@@ -1,67 +1,185 @@
-# Template de démonstration
+# SmokePing
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+[SmokePing](https://oss.oetiker.ch/smokeping/) mesure la latence et les pertes
+de paquets de votre connexion vers des cibles choisies, et dessine ses
+fameux graphiques « en fumée ». Cette intégration amène ses cibles dans
+Gladys : chaque cible devient un appareil avec sa latence médiane, ses pertes,
+sa gigue et son graphique, des scènes réagissent quand une cible devient
+injoignable ou dégradée, et un widget du tableau de bord les montre toutes.
 
-## Ce que vous obtenez
+Gladys lit SmokePing : elle ne pingue pas vos cibles elle-même. Tout reste sur
+votre réseau (aucun cloud).
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+Testée contre un vrai SmokePing en Docker (SmokePing 2.9.0, image
+`lscr.io/linuxserver/smokeping`) : cibles joignables, injoignables et avec
+des pertes provoquées exprès. Vos retours sont les bienvenus dans
+[les issues](https://github.com/guim31/gladys-smokeping/issues).
 
-## Configuration
+## Ce qu'il faut
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+- Gladys Assistant 5.1.0 ou plus récent.
+- SmokePing 2.7 ou plus récent, son interface web joignable depuis Gladys.
+- Une ligne dans la configuration de son serveur web, pour que Gladys lise
+  les mesures (ci-dessous). SmokePing n'a pas d'API : ses chiffres ne sont
+  que dans ses fichiers RRD.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+## Mise en route
 
-## Actions
+### 1. Servir les fichiers RRD
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+SmokePing garde un fichier RRD par cible dans son dossier `data`. Servez ce
+dossier en lecture seule à l'adresse `/smokeping-data/` du même serveur web.
 
-## Scènes
+**Image Docker `lscr.io/linuxserver/smokeping`** : créez le fichier
+`site-confs/gladys.conf` dans le dossier monté sur `/config`, puis redémarrez
+le conteneur :
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+```apache
+Alias /smokeping-data /data
+<Directory "/data">
+    Options -Indexes
+    Require all granted
+</Directory>
+```
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+**Paquet Debian ou Ubuntu (Apache)** : les mêmes lignes avec
+`/var/lib/smokeping` à la place de `/data`, dans
+`/etc/apache2/conf-available/smokeping-data.conf`, puis
+`a2enconf smokeping-data` et rechargez Apache.
+
+**Nginx** : `location /smokeping-data/ { alias /var/lib/smokeping/; }`.
+
+Vérifiez : `http://<votre SmokePing>/smokeping-data/<Groupe>/<Cible>.rrd` doit
+télécharger un fichier. Ces fichiers contiennent les mêmes chiffres que la
+page de SmokePing ; restreignez-les comme elle (`Require ip 192.168.1.0/24`,
+un identifiant) si besoin.
+
+### 2. Configurer l'intégration
+
+Dans Gladys, ouvrez l'intégration et remplissez :
+
+- **Adresse de SmokePing** : l'adresse de sa page web, par exemple
+  `http://192.168.1.2/smokeping/`, ou de son `smokeping.cgi`
+  (`http://192.168.1.2/cgi-bin/smokeping.cgi` avec le paquet Debian).
+- **Adresse des fichiers RRD** : laissez-la vide si vous avez suivi l'étape 1.
+- **Utilisateur** et **Mot de passe** : seulement si le serveur web demande
+  un identifiant. Ils ne partent jamais vers une adresse des fichiers RRD
+  située sur un autre serveur.
+- **Seuil de pertes de paquets** (10 % par défaut) et **Seuil de latence**
+  (100 ms) : au-delà, une cible est dégradée.
+- **Mesures consécutives** : combien de mesures SmokePing de suite au-delà
+  d'un seuil, ou sans aucune réponse, avant une alerte (2 par défaut).
+  SmokePing mesure toutes les 5 minutes par défaut : 2, c'est 10 minutes.
+- **Intervalle de rafraîchissement** : de 1 à 5 minutes (1 minute par
+  défaut). Quelques petites requêtes par cible à chaque fois.
+- **Période du graphique** : 3 heures, 30 heures ou 10 jours.
+- **Langue des noms** : langue des noms des fonctionnalités et des résultats
+  de scène (français par défaut).
+
+Cliquez ensuite sur **Tester la connexion** : elle lit SmokePing et compte les
+cibles.
+
+### 3. Ajouter les cibles
+
+Ouvrez l'onglet **Découverte** de l'intégration : un appareil par cible
+SmokePing, nommé comme dans son menu (les groupes ne sont pas des appareils).
+Ajoutez celles à suivre. Les déclencheurs de scène et le widget fonctionnent
+pour toutes les cibles, ajoutées ou non.
+
+## Les appareils
+
+Chaque cible :
+
+- **Joignable** : oui quand au moins un ping a répondu lors de la dernière
+  mesure, non après le nombre choisi de mesures sans aucune réponse.
+- **Latence médiane** : le temps d'aller-retour médian, en millisecondes.
+- **Pertes de paquets** : la part des pings perdus, en pourcentage.
+- **Gigue** : l'écart type des temps d'aller-retour, en millisecondes.
+- **Dernière mesure** : l'heure de la dernière mesure de SmokePing, dans le
+  fuseau de Gladys.
+- **Graphique SmokePing** : le graphique SmokePing de la cible, en image de
+  caméra, rafraîchi toutes les 5 minutes et à la demande.
+
+Les mesures partent au plus toutes les 5 minutes, tout de suite quand l'état
+change. Une cible que SmokePing ne mesure plus affiche le badge injoignable et
+n'envoie rien.
 
 ## Tableau de bord
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+Le widget **SmokePing** montre trois tuiles (cibles injoignables, dégradées,
+latence médiane) et une ligne par cible, les injoignables et dégradées
+d'abord, avec leur latence et leurs pertes. Dans ses réglages, choisissez un
+groupe, ou des cibles ajoutées à Gladys, et masquez les tuiles ou le bouton
+**Actualiser**. Le bouton **Actualiser** relit SmokePing tout de suite.
+
+Le widget **Caméra** du tableau de bord montre le graphique d'une cible.
+
+## Scènes
+
+### Déclencheurs
+
+- **Une cible devient injoignable** : tous les pings d'une cible sont perdus,
+  autant de mesures de suite que réglé. Variables : nom de la cible, groupe.
+- **Une cible est de nouveau joignable** : une cible injoignable répond de
+  nouveau. Variables : nom de la cible, groupe, durée de la coupure en
+  minutes.
+- **Pertes de paquets au-dessus du seuil** : les pertes d'une cible joignable
+  atteignent le seuil, sur des mesures consécutives. Variables : nom de la
+  cible, groupe, pertes de paquets.
+- **Latence au-dessus du seuil** : la latence médiane atteint le seuil, sur
+  des mesures consécutives. Variables : nom de la cible, groupe, latence
+  médiane.
+
+Tous peuvent être limités à certaines cibles. Aucun événement à la première
+lecture : seulement les vrais changements. Une alerte ne se redéclenche
+qu'après un retour sous le seuil. Une cible devenue injoignable pendant un
+redémarrage de Gladys est quand même annoncée, une fois.
+
+### Actions
+
+- **État d'une cible** : joignable ou non, état en toutes lettres, latence
+  médiane, pertes, gigue, et une phrase toute prête comme « Box : Joignable,
+  23,4 ms, 12 % de pertes, gigue 3,1 ms ».
+- **Compter les cibles injoignables** : combien sont injoignables, dégradées
+  et au total, sur le serveur ou dans un groupe, et les noms des injoignables.
+
+### Idées de scènes
+
+- **Une cible devient injoignable** (votre box, 8.8.8.8) → un message, ou
+  redémarrer la box par une prise connectée.
+- **Pertes de paquets au-dessus du seuil** → un message avec les pertes, puis
+  l'action « Envoyer une image de caméra » avec le graphique SmokePing.
+- Chaque matin, **Compter les cibles injoignables** → un message s'il y en a.
+
+Pour surveiller des machines sans SmokePing, voir
+[gladys-ping-wol](https://github.com/guim31/gladys-ping-wol) ; pour des
+services HTTP, [gladys-gatus](https://github.com/guim31/gladys-gatus).
 
 ## Dépannage
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+- **« SmokePing ne répond pas »** : vérifiez l'adresse et le port depuis la
+  machine de Gladys, et qu'un pare-feu ne bloque pas.
+- **« Les fichiers RRD ne sont pas servis à l'adresse des données »** :
+  l'étape 1 manque, ou l'adresse des fichiers diffère : ouvrez
+  `…/smokeping-data/<Groupe>/<Cible>.rrd` dans un navigateur.
+- **« Aucune interface SmokePing à cette adresse »** : saisissez l'adresse de
+  la page SmokePing ou de `smokeping.cgi`.
+- **« L'adresse redirige »** : saisissez l'adresse complète de
+  `smokeping.cgi`, en `https://` si le serveur y redirige.
+- **« Fichier RRD incompris »** : les fichiers viennent d'une machine que
+  l'intégration ne sait pas lire (gros-boutiste, ou x86 32 bits) ;
+  signalez-le dans les issues.
+- **Une cible manque** : elle doit figurer dans le menu de SmokePing (non
+  masquée) et avoir un fichier RRD ; cliquez sur Rechercher dans l'onglet
+  Découverte après un changement de la configuration de SmokePing.
+
+## Limites
+
+- Les mesures du SmokePing maître seulement, pas de ses esclaves.
+- Gladys lit la mesure la plus récente : une coupure plus courte qu'un pas de
+  SmokePing peut passer inaperçue, comme sur ses graphiques.
+- Les cibles à plusieurs hôtes (graphiques multi-hôtes) n'ont pas de fichier :
+  non proposées.
+- Le graphique part en image PNG ; Gladys l'affiche, un canal qui n'accepte
+  que le JPEG peut ne pas l'afficher.
+- Sans lien avec SmokePing ni ses auteurs.
