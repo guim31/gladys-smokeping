@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-19
+
 ### Added
 
 - One device per SmokePing target: reachable, median latency, packet loss,
@@ -26,3 +28,6 @@ the notes of the version's GitHub Release.
 - Dashboard widget: unreachable and degraded targets first, with their latency
   and loss; tiles and Refresh button can be hidden.
 - "Test the connection" action; texts in English, French, German and Spanish.
+
+[Unreleased]: https://github.com/guim31/gladys-smokeping/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/guim31/gladys-smokeping/releases/tag/v1.0.0
